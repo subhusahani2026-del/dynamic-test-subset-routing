@@ -1,0 +1,57 @@
+
+name: Dynamic Test-Subset Routing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-routing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Detect changed files and route tests
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$BASE_SHA"
+            HEAD="$HEAD_SHA"
+          else
+            BASE="$BEFORE_SHA"
+            HEAD="${GITHUB_SHA}"
+          fi
+
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then
+            python scripts/route_tests.py
+          else
+            git diff --name-only "$BASE" "$HEAD" > changed.txt
+            mapfile -t FILES < changed.txt
+
+            if [ ${#FILES[@]} -eq 0 ]; then
+              python scripts/route_tests.py
+            else
+              python scripts/route_tests.py "${FILES[@]}"
+            fi
+          fi
